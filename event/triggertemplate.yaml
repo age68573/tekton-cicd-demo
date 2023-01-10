@@ -1,0 +1,45 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: github-template
+spec:
+  params:
+    - name: git_revision
+    - name: branch # tag version
+  resourcetemplates:
+      # the section below is exactly the same as writing a PipelineRun
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: event-listener-run-
+      spec:
+        params:
+          - name: rrr
+            value: $(tt.params.git_revision)
+          - name: branch
+            value: $(tt.params.branch)
+        pipelineRef:
+          name: vueapp-pipeline
+        workspaces:
+          - name: shared-workspace
+            #subPath: my-subdir
+            persistentvolumeclaim:
+              claimName: tekton-pvc
+          - name: sonar-settings
+            configMap:
+              name: sonar-properties
+          - name: sonar-credentials
+            secret:
+              secretName: sonar-secret
+          - name: dockerconfig
+            secret:
+              secretName: regcred
+              items:
+              - key: .dockerconfigjson
+                path: config.json
+    - apiVersion: tekton.dev/v1beta1
+      kind: TaskRun
+      metadata:
+        name: hell-task-run
+      spec:
+        taskRef: hello     

@@ -1,0 +1,130 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: vueapp-pipeline
+spec:
+  workspaces:
+    - name: shared-workspace
+    - name: sonar-credentials
+    - name: sonar-settings
+    - name: dockerconfig
+  params:
+    - name: rrr
+      default: master
+    - name: branch
+      default: 0.3.1
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+      workspaces:
+      - name: output
+        workspace: shared-workspace
+      params:
+        - name: url
+          value: https://github.com/age68573/learnjenkins.git
+          #- name: subdirectory
+          #value: my-subdir
+        - name: deleteExisting
+          value: "true"
+        - name: revision
+          value: $(params.rrr)
+    - name: code-analysis
+      taskRef:
+        name: sonarqube-scanner
+      runAfter:
+        - fetch-repository
+      workspaces:
+      - name: source
+        workspace: shared-workspace
+      - name: sonar-settings
+        workspace: sonar-settings
+      - name: sonar-credentials
+        workspace: sonar-credentials
+    - name: npm-install
+      taskRef:
+        name: npm
+      runAfter:
+        - code-analysis
+      workspaces:
+      - name: source
+        workspace: shared-workspace
+      params:
+      - name: ARGS
+        value:
+        - install
+    - name: npm-build
+      taskRef:
+        name: npm
+      runAfter:
+        - npm-install
+      workspaces:
+      - name: source
+        workspace: shared-workspace
+      params:
+      - name: ARGS
+        value:
+        - "run"
+        - "build"
+    - name: image-build-push
+      taskRef:
+        name: kaniko
+      runAfter:
+        - npm-build
+      params:
+      - name: IMAGE
+        value: age68573/tekton_test:$(params.branch)
+      - name: DOCKERFILE
+        value: ./dockerfile
+      workspaces:
+      - name: source
+        workspace: shared-workspace
+      - name: dockerconfig
+        workspace: dockerconfig
+    - name: helm-upgrade-from-source
+      taskRef:
+        name: helm-upgrade-from-source
+      runAfter:
+        - image-build-push
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: charts_dir
+          value: deployfile/helm
+        - name: release_version
+          value: v1.0.0
+        - name: values_file
+          value: values.yaml
+        - name: release_name
+          value: vueapp
+        - name: overwrite_values
+          value: "image.tag=$(params.branch)"
+        - name: upgrade_extra_params
+          value: "--force"
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: vueapp-pipelinerun-
+spec:
+  pipelineRef:
+    name: vueapp-pipeline
+  workspaces:
+    - name: shared-workspace
+      #subPath: my-subdir
+      persistentvolumeclaim:
+        claimName: tekton-pvc
+    - name: sonar-settings
+      configMap:
+        name: sonar-properties
+    - name: sonar-credentials
+      secret:
+        secretName: sonar-secret
+    - name: dockerconfig
+      secret:
+        secretName: regcred
+        items:
+        - key: .dockerconfigjson
+          path: config.json

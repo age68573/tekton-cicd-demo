@@ -1,0 +1,57 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: sonarqube-pipeline
+spec:
+  workspaces:
+    - name: shared-workspace
+    - name: sonar-settings
+    - name: sonar-credentials
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: url
+          value: https://github.com/age68573/learnjenkins.git
+        - name: subdirectory
+          value: my-subdir
+        - name: deleteExisting
+          value: "true"
+        - name: revision
+          value: master
+    - name: code-analysis
+      taskRef:
+        name: sonarqube-scanner
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: sonar-settings
+          workspace: sonar-settings
+        - name: sonar-credentials
+          workspace: sonar-credentials
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: sonarqube-run
+spec:
+  pipelineRef:
+    name: sonarqube-pipeline
+  workspaces:
+    - name: shared-workspace
+      subPath: my-subdir
+      persistentvolumeclaim:
+        claimName: tekton-pvc
+    - name: sonar-settings
+      configMap:
+        name: sonar-properties
+    - name: sonar-credentials
+      secret:
+        secretName: sonar-secret
